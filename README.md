@@ -2,7 +2,7 @@
 Atom order in one molecule ("product") is made to match that in another ("reactant")
 
 Based on the idea presented in this paper: 10.1021/acs.jctc.7b00764.
-Note that bond orders and charges are removed which is not mentioned in the paper.
+Note that bond orders and charges are removed when comparing fragments. I thank Leif Jacobson and  Art Bochevarov for helpful discussions.
 
 The method breaks bonds in the reactants and products until fragments match.  The atoms in each fragments then are matched.
 
