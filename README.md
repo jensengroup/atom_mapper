@@ -1,7 +1,7 @@
 # atom_mapper
-Atom order in one molecule is made to match that in another
+Atom order in one molecule ("product") is made to match that in another ("reactant")
 
-Based on the idea presented in this paper: 10.1021/acs.jctc.7b00764
+Based on the idea presented in this paper: 10.1021/acs.jctc.7b00764.
 Note that bond orders and charges are removed which is not mentioned in the paper.
 
 The method breaks bonds in the reactants and products until fragments match.  The atoms in each fragments then are matched.
