@@ -22,8 +22,9 @@ def atom_mapper(react_smiles,prod_smiles,max_bonds_cut):
     react = change_formal_charge(react)
     prod = change_formal_charge(prod)
     
-    react_smiles = Chem.MolToSmiles(react)
-    prod_smiles = Chem.MolToSmiles(prod)
+#recanonicalize SMILES
+    react_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(Chem.MolToSmiles(react),sanitize=False))
+    prod_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(Chem.MolToSmiles(prod),sanitize=False))
 
 #We identify active bonds based on SMILES comparisons and connect fragments to SMILES via dictionaries
     matches = []
@@ -33,7 +34,7 @@ def atom_mapper(react_smiles,prod_smiles,max_bonds_cut):
     react_frags = {}
     react_frags[react_smiles] = react
     prod_frags = {}
-    prod_frags[react_smiles] = prod
+    prod_frags[prod_smiles] = prod
   
 #Keep cutting bonds until the fragments match each other.
 #If reactants and products have an unequal number of bonds, we cut the one with most bonds first
