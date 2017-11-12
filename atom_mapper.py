@@ -1,7 +1,27 @@
 from rdkit import Chem
 from rdkit.Chem import AllChem,rdMolAlign,rdMolDescriptors
+import sys
+from itertools import combinations, product
+from collections import defaultdict
+
 
 def atom_mapper(react_smiles,prod_smiles,max_bonds_cut):
+# 
+    prod_order = heavy_atom_mapper(react_smiles,prod_smiles_nochiral,max_bonds_cut)
+    
+    # Reorder the atoms in the product to match that of the reactants
+    prod_ordered = Chem.RenumberAtoms(prod, prod_order)
+
+# Overlay the most flexible molecule ("mol.sdf") on the most rigid ("template.sdf") and write sdf files
+    rmsd = react_prod_rmsd(react,prod_ordered)
+
+# Check hydrogen numbering of atoms with more than one hydrogen 
+    #prod_ordered = hydrogen_atom_mapper(react,prod_ordered)
+    prod_ordered = equivalent_atom_mapper(react,prod_ordered)
+
+    return prod_ordered
+    
+def heavy_atom_mapper(react_smiles,prod_smiles,max_bonds_cut):
     react = Chem.MolFromSmiles(react_smiles)
     prod = Chem.MolFromSmiles(prod_smiles)
 
@@ -15,14 +35,15 @@ def atom_mapper(react_smiles,prod_smiles,max_bonds_cut):
     react_numbonds = react.GetNumBonds()
     prod_numbonds = prod.GetNumBonds()
 
+    original_prod = prod
 #Change all bonds to single bonds and remove all charges on atoms
 #This allows us to compare molecule fragments based purely on connectivity
     react = change_bond_order(react)
     prod = change_bond_order(prod)
     react = change_formal_charge(react)
     prod = change_formal_charge(prod)
-    
-#recanonicalize SMILES
+
+#recanonicalize SMILES (sanitize=False prevets hydrogen deletion)
     react_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(Chem.MolToSmiles(react),sanitize=False))
     prod_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(Chem.MolToSmiles(prod),sanitize=False))
 
@@ -75,7 +96,7 @@ def atom_mapper(react_smiles,prod_smiles,max_bonds_cut):
         prod_order = prod_orders[0]
     
     print list(prod_order)
-       
+           
     return list(prod_order)
         
 def change_bond_order(mol):
@@ -118,13 +139,10 @@ def get_prod_orders(matches,react_frags,prod_frags):
     for match in matches:
         patt = react_frags[match]
         prod_order = prod_frags[match].GetSubstructMatch(patt)
-# atom_rank is for something that may not be needed. Leaving it here for now
-#        atom_rank = list(Chem.CanonicalRankAtoms(prod_frags[match],breakTies=False)) 
         if prod_order not in prod_orders:
             prod_orders.append(prod_order)  
 #            atom_ranks.append(atom_rank)
     
-    print prod_orders
     return prod_orders
 
 def find_best_match(react,prod,prod_orders):
@@ -141,9 +159,10 @@ def find_best_match(react,prod,prod_orders):
     
     return best_prod_order
 
+def react_prod_rmsd(react,prod, embed=True):
 #Computes the RMSD between reactant and product
 #The most flexible molecule ("mol") is superimposed on the most rigid ("template")
-def react_prod_rmsd(react,prod):
+
     react_rotbonds = rdMolDescriptors.CalcNumRotatableBonds(react)
     prod_rotbonds = rdMolDescriptors.CalcNumRotatableBonds(prod)
     
@@ -170,23 +189,25 @@ def react_prod_rmsd(react,prod):
     Chem.SanitizeMol(mol)
     Chem.SanitizeMol(template)
 #make a 3D model of the template and optimize w UFF
-    AllChem.EmbedMolecule(template)
-    AllChem.UFFOptimizeMolecule(template)
+#if you got react and prod by reading in optimized geometries you want to skip these steps
+    if embed:
+        print "embedding"
+        AllChem.EmbedMolecule(template,randomSeed=3) #remove 3 when done debugging
+        AllChem.UFFOptimizeMolecule(template)
 
 #Make a 3D model of "mol" that most closely matches that of the template an UFF optimization
 #that minimizes the distances between corresponding atoms in mol and template.
-    ConstrainedEmbedRP(mol, template)
-    Chem.MolToMolBlock(mol)
+    ConstrainedEmbedRP(mol, template, useTethers=False, embed=embed)
+    #Chem.MolToMolBlock(mol)
 
     rms = float(mol.GetProp('EmbedRMS'))
-    print 'RMS:',rms
     
     Chem.SDWriter("template.sdf").write(template)
     Chem.SDWriter("mol.sdf").write(mol)
     
     return rms
 
-def ConstrainedEmbedRP(mol, core, useTethers=True, coreConfId=-1, randomseed=2342,getForceField=AllChem.UFFGetMoleculeForceField, **kwargs):
+def ConstrainedEmbedRP(mol, core, useTethers=True, embed=True, coreConfId=-1, randomseed=2342,getForceField=AllChem.UFFGetMoleculeForceField, **kwargs):
 # 
 #  Copyright (C) 2006-2017  greg Landrum and Rational Discovery LLC 
 # 
@@ -201,7 +222,10 @@ def ConstrainedEmbedRP(mol, core, useTethers=True, coreConfId=-1, randomseed=234
 # coordMap option doesn't work for fragments
 
 #    match = mol.GetSubstructMatch(core)
-    match = [i for i in range(mol.GetNumAtoms())]  #jhj
+    force_constant = 100.
+    force_constant = 10.
+#    match = [i for i in range(mol.GetNumAtoms())]  #jhj
+    match = range(mol.GetNumAtoms()) #jhj
     if not match:
         raise ValueError("molecule doesn't match the core")
     coordMap = {}
@@ -210,13 +234,14 @@ def ConstrainedEmbedRP(mol, core, useTethers=True, coreConfId=-1, randomseed=234
         corePtI = coreConf.GetAtomPosition(i)
         coordMap[idxI] = corePtI
 
-    if "." in Chem.MolToSmiles(mol):
-        ci = AllChem.EmbedMolecule(mol, randomSeed=randomseed, **kwargs)  #jhj
-    else:
-        ci = AllChem.EmbedMolecule(mol, coordMap=coordMap, randomSeed=randomseed, **kwargs)
+    if embed:
+        if "." in Chem.MolToSmiles(mol):
+            ci = AllChem.EmbedMolecule(mol, randomSeed=randomseed, **kwargs)  #jhj
+        else:
+            ci = AllChem.EmbedMolecule(mol, coordMap=coordMap, randomSeed=randomseed, **kwargs)
 
-    if ci < 0:
-        raise ValueError('Could not embed molecule.')
+        if ci < 0:
+            raise ValueError('Could not embed molecule.')
 
     algMap = [(j, i) for i, j in enumerate(match)]
 
@@ -227,7 +252,7 @@ def ConstrainedEmbedRP(mol, core, useTethers=True, coreConfId=-1, randomseed=234
             for j in range(i + 1, len(match)):
                 idxJ = match[j]
                 d = coordMap[idxI].Distance(coordMap[idxJ])
-                ff.AddDistanceConstraint(idxI, idxJ, d, d, 100.)
+                ff.AddDistanceConstraint(idxI, idxJ, d, d, force_constant)
         ff.Initialize()
         n = 4
         more = ff.Minimize()
@@ -244,7 +269,7 @@ def ConstrainedEmbedRP(mol, core, useTethers=True, coreConfId=-1, randomseed=234
         for i in range(core.GetNumAtoms()):
             p = conf.GetAtomPosition(i)
             pIdx = ff.AddExtraPoint(p.x, p.y, p.z, fixed=True) - 1
-            ff.AddDistanceConstraint(pIdx, match[i], 0, 0, 100.)
+            ff.AddDistanceConstraint(pIdx, match[i], 0, 0, force_constant)
         ff.Initialize()
         n = 4
         more = ff.Minimize(energyTol=1e-4, forceTol=1e-3)
@@ -256,13 +281,55 @@ def ConstrainedEmbedRP(mol, core, useTethers=True, coreConfId=-1, randomseed=234
     mol.SetProp('EmbedRMS', str(rms))
     return mol
 
+
+def equivalent_atom_mapper(react,prod):
+#inital rmsd between reactants and products
+    rmsd = react_prod_rmsd(react,prod,embed=False)
+    print "initial rmsd",rmsd
+    
+#Rank in molecular tree. Duplicates = identical atoms
+#Example: CC(C)C -> [0, 3, 0, 0] meaning atom 0, 2 and 3 are identical
+    atom_rank = list(Chem.CanonicalRankAtoms(prod,breakTies=False)) 
+    print "atom_rank",atom_rank
+
+# list_duplicates makes a dictionary with duplicates
+# sorted(list_duplicates([0, 3, 0, 0]) -> [(0, [0, 2, 3])]
+# list(itertools.permutations([0, 2, 3],2)) -> [(0, 2), (0, 3), (2, 3)]
+    equivalent_atom_pairs = []
+    for dummy, equivalent_atoms in list_duplicates(atom_rank):
+        equivalent_atom_pairs += list(combinations(equivalent_atoms,2))
+    
+    print "equivalent_atom_pairs",equivalent_atom_pairs
+
+# switch equivalent atoms pairs and save cases where rmsd goes down
+    for a,b in equivalent_atom_pairs:
+        order = range(prod.GetNumAtoms()) 
+        order[a] = b
+        order[b] = a
+                
+        trial_prod = Chem.RenumberAtoms(prod, order) 
+        trial_rmsd = react_prod_rmsd(react,trial_prod,embed=False)
+        print "rmsd, trial_rmsd",rmsd, trial_rmsd
+        if trial_rmsd < rmsd:
+            prod = trial_prod
+            rmsd = trial_rmsd
+         
+    return prod
+
+def list_duplicates(seq):
+    tally = defaultdict(list)
+    for i,item in enumerate(seq):
+        tally[item].append(i)
+    return ((key,locs) for key,locs in tally.items() if len(locs)>1)
+            
+
 if __name__ == '__main__':
     
-    react_smiles = "CC=C(C)CF"
-    prod_smiles = "C(C(=C)CF)C"
+    #react_smiles = "CC=C(C)CF"
+    #prod_smiles = "C(C(=C)CF)C"
     
-    #react_smiles = "C=CC=C.C=C"
-    #prod_smiles = "C1CCC=CC1"
+    react_smiles = "C=CC=C.C=C"
+    prod_smiles = "C1CCC=CC1"
     
     #react_smiles = "C=CC=C.O=CC1=COCC1"
     #prod_smiles = "O=CC12C(CC=CC2)OCC1"
@@ -294,11 +361,7 @@ if __name__ == '__main__':
 # Maximum number of bonds to cut when determining a match. 
 # The CPU time increases very quickly with this parameter
     max_bonds_cut = 6
-    prod_order = atom_mapper(react_smiles,prod_smiles_nochiral,max_bonds_cut)
-    print "prod_order",prod_order, len(prod_order),prod.GetNumAtoms()
-
-# Reorder the atoms in the product to match that of the reactants
-    prod_ordered = Chem.RenumberAtoms(prod, prod_order)
-
-# Overlay the most flexible molecule ("mol.sdf") on the most rigid ("template.sdf") and write sdf files
-    print react_prod_rmsd(react,prod_ordered)
+    prod_ordered = atom_mapper(react_smiles,prod_smiles_nochiral,max_bonds_cut)
+  
+    rmsd = react_prod_rmsd(react,prod_ordered,embed=False)
+    print "final rmsd", rmsd
