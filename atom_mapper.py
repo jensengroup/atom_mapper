@@ -13,7 +13,7 @@ def change_bond_order(mol):
 
 def change_formal_charge(mol): 
     for atom in mol.GetAtoms():    
-        if atom.GetFormalCharge() == 0:
+        if atom.GetFormalCharge() != 0:
             atom.SetFormalCharge(0)
             
     return mol
