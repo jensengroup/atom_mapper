@@ -124,7 +124,7 @@ def atom_mapper(react_smiles,prod_smiles,max_bonds_cut):
     return list(prod_orders)
 
 def reorder_prod(react_smiles,prod_smiles,max_bonds_cut):
-    prod_orders = atom_mapper(react_smiles,prod_smiles_nochiral,max_bonds_cut)
+    prod_orders = atom_mapper(react_smiles,prod_smiles,max_bonds_cut)
     #print(prod_orders)
     
     # Reorder the atoms in the product to match that of the reactants
