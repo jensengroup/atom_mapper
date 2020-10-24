@@ -123,7 +123,7 @@ def atom_mapper(react_smiles,prod_smiles,max_bonds_cut):
            
     return list(prod_orders)
 
-def reorder_prod(react_smiles,prod_smiles,max_bonds_cut):
+def reorder_prod(prod,react_smiles,prod_smiles,max_bonds_cut):
     prod_orders = atom_mapper(react_smiles,prod_smiles,max_bonds_cut)
     #print(prod_orders)
     
@@ -206,7 +206,7 @@ if __name__ == '__main__':
     # Maximum number of bonds to cut when determining a match. 
     # The CPU time increases very quickly with this parameter
     max_bonds_cut = 6
-    prod_ordered_list = reorder_prod(react_smiles,prod_smiles_nochiral,max_bonds_cut)
+    prod_ordered_list = reorder_prod(prod,react_smiles,prod_smiles_nochiral,max_bonds_cut)
 
     for prod_ordered in prod_ordered_list:
       suggest_strategy(react,prod_ordered)
