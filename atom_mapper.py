@@ -115,10 +115,10 @@ def atom_mapper2D(react, prod, max_bonds_cut=4):
     #print(len(prod_orders))
         
     if len(prod_orders) == 0:
-        print("no match found")
-        return [i for i in range(react.GetNumAtoms())]
-    if len(prod_orders) > 1:
-        print("more than one match found")
+        #print("no match found")
+        return []
+    #if len(prod_orders) > 1:
+    #   print("more than one match found")
 
     #print(list(prod_orders))
 
