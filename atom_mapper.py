@@ -52,7 +52,7 @@ def get_prod_orders(matches,react_frags,prod_frags):
 def atom_mapper2D(react, prod, max_bonds_cut=4):
 # Remove stereochemistry in case reaction changes stereochemistry
     original_prod = Chem.Mol(prod)
-    react = Chem.Mol(prod)
+    react = Chem.Mol(react)
     Chem.rdmolops.RemoveStereochemistry(react)
     prod = Chem.Mol(prod)
     Chem.rdmolops.RemoveStereochemistry(prod)
