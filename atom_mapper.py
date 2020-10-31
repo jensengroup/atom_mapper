@@ -49,21 +49,22 @@ def get_prod_orders(matches,react_frags,prod_frags):
     
     return prod_orders
 
-def atom_mapper(react_smiles,prod_smiles,max_bonds_cut):
-    react = Chem.MolFromSmiles(react_smiles)
-    prod = Chem.MolFromSmiles(prod_smiles)
+def atom_mapper2D(react, prod, max_bonds_cut=4):
+# Remove stereochemistry in case reaction changes stereochemistry
+    original_prod = Chem.Mol(prod)
+    react = Chem.Mol(prod)
+    Chem.rdmolops.RemoveStereochemistry(react)
+    prod = Chem.Mol(prod)
+    Chem.rdmolops.RemoveStereochemistry(prod)
+
 
 #Remove aromaticity and work with single/double/triple bonds
     Chem.Kekulize(react,clearAromaticFlags=True)
     Chem.Kekulize(prod,clearAromaticFlags=True)
-        
-    react = Chem.AddHs(react) 
-    prod = Chem.AddHs(prod) 
     
     react_numbonds = react.GetNumBonds()
     prod_numbonds = prod.GetNumBonds()
 
-    original_prod = prod
 #Change all bonds to single bonds and remove all charges on atoms
 #This allows us to compare molecule fragments based purely on connectivity
     react = change_bond_order(react)
@@ -120,13 +121,12 @@ def atom_mapper(react_smiles,prod_smiles,max_bonds_cut):
         print("more than one match found")
 
     #print(list(prod_orders))
-           
-    return list(prod_orders)
 
-def reorder_prod(prod,react_smiles,prod_smiles,max_bonds_cut):
-    prod_orders = atom_mapper(react_smiles,prod_smiles,max_bonds_cut)
-    #print(prod_orders)
-    
+    prods_orders = reorder_prod(original_prod, prod_orders)
+           
+    return prods_orders
+
+def reorder_prod(original_prod, prod_orders):
     # Reorder the atoms in the product to match that of the reactants
     prod_ordered_list = []
     for prod_order in prod_orders: 
@@ -134,53 +134,6 @@ def reorder_prod(prod,react_smiles,prod_smiles,max_bonds_cut):
       prod_ordered_list.append(prod_ordered)
       
     return prod_ordered_list
-
-''' 
-1. Pick single molecule
-2. If both single, pick least flexible molecule
-3. If bonds are formed, form those
-4. If no bonds are formed, break the bonds
-'''
-
-def suggest_strategy(react,prod_ordered):
-
-# A + B -> C + D
-  if "." in Chem.MolToSmiles(react) and  "." in Chem.MolToSmiles(prod_ordered):
-    print('Arbitrarily choose reactant')
-    R, P = react, prod_ordered
-    
-# A -> B + C
-  if "." not in Chem.MolToSmiles(react) and  "." in Chem.MolToSmiles(prod_ordered):
-    print('Choose reactant')
-    R, P = react, prod_ordered
-    
-# A + B -> C
-  if "." in Chem.MolToSmiles(react) and  "." not in Chem.MolToSmiles(prod_ordered):
-    print('Choose product')
-    R, P = prod_ordered, react
-  
-# A -> B 
-  if "." not in Chem.MolToSmiles(react) and  "." not in Chem.MolToSmiles(prod_ordered):
-    react_rotbonds = rdMolDescriptors.CalcNumRotatableBonds(react)
-    prod_rotbonds = rdMolDescriptors.CalcNumRotatableBonds(prod)  
-
-    if react_rotbonds <= prod_rotbonds:
-      print('Choose reactant')
-      R, P = react, prod_ordered
-    else:  
-      print('Choose product')
-      R, P = prod_ordered, react
-
-  R_bonds = R.GetSubstructMatches(Chem.MolFromSmarts('[*]~[*]'))
-  P_bonds = P.GetSubstructMatches(Chem.MolFromSmarts('[*]~[*]'))
-  #active_bonds = list(set(R_bonds)^set(P_bonds))
-  bonds_broken = list(set(R_bonds)-set(P_bonds))
-  bonds_formed = list(set(P_bonds)-set(R_bonds))
-  if bonds_formed:
-    print("Form",bonds_formed)
-  else:
-    print("Break",bonds_broken)
-
 
 if __name__ == '__main__':
     react_smiles = "C=CC=C.C=C"
@@ -193,9 +146,9 @@ if __name__ == '__main__':
     prod_smiles = "C(C(=C)CF)C"
 
     #canonicalize SMILES - to get the same result independent of form of input smiles
-    react_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(react_smiles),isomericSmiles=False)
-    prod_smiles_nochiral = Chem.MolToSmiles(Chem.MolFromSmiles(prod_smiles),isomericSmiles=False)
-    prod_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(prod_smiles),isomericSmiles=True)
+    #react_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(react_smiles),isomericSmiles=False)
+    #prod_smiles_nochiral = Chem.MolToSmiles(Chem.MolFromSmiles(prod_smiles),isomericSmiles=False)
+    #prod_smiles = Chem.MolToSmiles(Chem.MolFromSmiles(prod_smiles),isomericSmiles=True)
 
     react = Chem.MolFromSmiles(react_smiles)
     react = Chem.AddHs(react)
@@ -206,7 +159,8 @@ if __name__ == '__main__':
     # Maximum number of bonds to cut when determining a match. 
     # The CPU time increases very quickly with this parameter
     max_bonds_cut = 6
-    prod_ordered_list = reorder_prod(prod,react_smiles,prod_smiles_nochiral,max_bonds_cut)
+    prods = atom_mapper2D(react, prod, max_bonds_cut)
 
-    for prod_ordered in prod_ordered_list:
-      suggest_strategy(react,prod_ordered)
+    for prod in prods:
+        print(Chem.MolToSmiles(prod))
+
