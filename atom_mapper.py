@@ -1,8 +1,97 @@
 #
-# Written by Jan Jensen 2018, 2019
+# Written by Jan Jensen and Mads Koerstz
 #
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdMolDescriptors
+from rdkit.Chem import rdmolops
+from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers
+from rdkit.Chem.EnumerateStereoisomers import StereoEnumerationOptions
+
+def reassign_atom_idx(mol):
+    """ Written by Mads Koerstz
+    Assigns RDKit mol atom id to atom mapped id """
+    renumber = [(atom.GetIdx(), atom.GetAtomMapNum()) for atom in mol.GetAtoms()]
+    new_idx = [idx[0] for idx in sorted(renumber, key=lambda x: x[1])]
+
+    return Chem.RenumberAtoms(mol, new_idx)
+
+def set_chirality(product, reactant):
+    """ Written by Mads Koerstz
+    Produce all combinations of isomers (R/S and cis/trans). But force 
+    product atoms with unchanged neighbors to the same label chirality as
+    the reactant """
+
+    # TODO move these somewhere it makes more sense.
+    product = reassign_atom_idx(product)
+    reactant = reassign_atom_idx(reactant)
+
+    Chem.SanitizeMol(product)
+    Chem.SanitizeMol(reactant)
+
+    # Find chiral atoms - including label chirality
+    chiral_atoms_product = Chem.FindMolChiralCenters(product, includeUnassigned=True)
+
+    unchanged_atoms = []
+    for atom, chiral_tag in chiral_atoms_product:
+        product_neighbors = [a.GetIdx() for a in product.GetAtomWithIdx(atom).GetNeighbors()]
+        reactant_neighbors = [a.GetIdx() for a in reactant.GetAtomWithIdx(atom).GetNeighbors()]
+        
+        if sorted(product_neighbors) == sorted(reactant_neighbors):
+            unchanged_atoms.append(atom)
+
+    # make combinations of isomers.
+    opts = StereoEnumerationOptions(onlyUnassigned=False, unique=False)
+    rdmolops.AssignStereochemistry(product, cleanIt=True,
+                                   flagPossibleStereoCenters=True, force=True)
+
+    product_isomers = []
+    product_isomers_mols = []
+    for product_isomer in EnumerateStereoisomers(product, options=opts):
+        rdmolops.AssignStereochemistry(product_isomer, force=True)
+        for atom in unchanged_atoms:
+            reactant_global_tag = reactant.GetAtomWithIdx(atom).GetProp('_CIPCode')
+
+            # TODO make sure that the _CIPRank is the same for atom in reactant and product.
+            product_isomer_global_tag = product_isomer.GetAtomWithIdx(atom).GetProp('_CIPCode')
+            if reactant_global_tag != product_isomer_global_tag:
+                product_isomer.GetAtomWithIdx(atom).InvertChirality()
+
+        if Chem.MolToSmiles(product_isomer) not in product_isomers:
+            product_isomers.append(Chem.MolToSmiles(product_isomer))
+            product_isomers_mols.append(product_isomer)
+
+    return product_isomers_mols
+
+def label_atoms(mol):
+  for i,atom in enumerate(mol.GetAtoms()):
+    atom.SetAtomMapNum(i+1)
+  
+  return mol
+
+def atom_mapper3D(reactant, products):
+    '''
+    Written by Mads Koerstz
+    '''
+    reactant = label_atoms(reactant)
+    opts = StereoEnumerationOptions(onlyUnassigned=False, unique=False)
+    rdmolops.AssignStereochemistry(reactant, cleanIt=True,
+                                    flagPossibleStereoCenters=True, force=True)
+
+    reactant = next(EnumerateStereoisomers(reactant, options=opts))
+
+    # Prepare reactant
+    reactant = reassign_atom_idx(reactant) # Makes Graph atom idx = SMILES atom mapped idx.
+    rdmolops.AssignStereochemistry(reactant, cleanIt=True, flagPossibleStereoCenters=True, force=True) # Assigns _CIPCode.
+
+    # Prepare Product 
+    new_products = []
+    for product in products:
+        product = label_atoms(product)
+        product = reassign_atom_idx(product) # Makes Graph atom idx = SMILES atom mapped idx .
+
+        new_products.append(set_chirality(product, reactant))
+
+    return reactant, new_products
 
 def change_bond_order(mol):
     for bond in mol.GetBonds():
@@ -49,7 +138,7 @@ def get_prod_orders(matches,react_frags,prod_frags):
     
     return prod_orders
 
-def atom_mapper2D(react, prod, max_bonds_cut=4):
+def atom_mapper2D(react, prod, max_bonds_cut):
 # Remove stereochemistry in case reaction changes stereochemistry
     original_prod = Chem.Mol(prod)
     react = Chem.Mol(react)
@@ -135,6 +224,12 @@ def reorder_prod(original_prod, prod_orders):
       
     return prod_ordered_list
 
+def atom_mapper(reactant, product, max_bonds_cut=4):
+    products = atom_mapper2D(reactant, product, max_bonds_cut)
+    reactant, products = atom_mapper3D(reactant, products)
+
+    return reactant, products
+
 if __name__ == '__main__':
     react_smiles = "C=CC=C.C=C"
     prod_smiles = "C1CCC=CC1"
@@ -159,8 +254,14 @@ if __name__ == '__main__':
     # Maximum number of bonds to cut when determining a match. 
     # The CPU time increases very quickly with this parameter
     max_bonds_cut = 6
-    prods = atom_mapper2D(react, prod, max_bonds_cut)
+    react, prods = atom_mapper(react, prod, max_bonds_cut)
 
+    print(prods)
+    mols = [react]
     for prod in prods:
-        print(Chem.MolToSmiles(prod))
+        print(prod)
+        mols += prod
+
+    for mol in mols:
+        print(Chem.MolToSmiles(mol))
 
