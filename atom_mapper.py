@@ -130,7 +130,7 @@ def reorder_prod(original_prod, prod_orders):
     # Reorder the atoms in the product to match that of the reactants
     prod_ordered_list = []
     for prod_order in prod_orders: 
-      prod_ordered = Chem.RenumberAtoms(prod, prod_order)
+      prod_ordered = Chem.RenumberAtoms(original_prod, prod_order)
       prod_ordered_list.append(prod_ordered)
       
     return prod_ordered_list
