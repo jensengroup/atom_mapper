@@ -138,7 +138,7 @@ def get_prod_orders(matches,react_frags,prod_frags):
     
     return prod_orders
 
-def atom_mapper2D(react, prod, max_bonds_cut):
+def atom_mapper2D(react, prod, max_bonds_cut=4):
 # Remove stereochemistry in case reaction changes stereochemistry
     original_prod = Chem.Mol(prod)
     react = Chem.Mol(react)
@@ -256,10 +256,8 @@ if __name__ == '__main__':
     max_bonds_cut = 6
     react, prods = atom_mapper(react, prod, max_bonds_cut)
 
-    print(prods)
     mols = [react]
     for prod in prods:
-        print(prod)
         mols += prod
 
     for mol in mols:
