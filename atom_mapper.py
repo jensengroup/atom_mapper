@@ -7,6 +7,8 @@ from rdkit.Chem import rdmolops
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers
 from rdkit.Chem.EnumerateStereoisomers import StereoEnumerationOptions
 
+import sys
+
 def reassign_atom_idx(mol):
     """ Written by Mads Koerstz
     Assigns RDKit mol atom id to atom mapped id """
@@ -224,7 +226,17 @@ def reorder_prod(original_prod, prod_orders):
       
     return prod_ordered_list
 
+def balanced(reactant, product):
+   react_formula = Chem.rdMolDescriptors.CalcMolFormula(reactant)
+   prod_formula = Chem.rdMolDescriptors.CalcMolFormula(product)
+
+   return react_formula == prod_formula
+
 def atom_mapper(reactant, product, max_bonds_cut=4):
+    if not balanced(reactant, product):
+        print('Reaction must be balanced')
+        sys.exit()
+
     products = atom_mapper2D(reactant, product, max_bonds_cut)
     reactant, products = atom_mapper3D(reactant, products)
 
